@@ -23,7 +23,7 @@ aggregation: drop tol = 0.02
 aggregation: drop scheme = distance laplacian
 filtered matrix: use lumping = 1
 Build (MueLu::TentativePFactory_kokkos)
-Build (MueLu::UncoupledAggregationFactory_kokkos)
+Build (MueLu::UncoupledAggregationFactory)
 BuildAggregates (Phase - (Dirichlet))
 BuildAggregatesRandom (Phase 1 (main))
 BuildAggregatesRandom (Phase 2a (secondary))
@@ -82,7 +82,7 @@ aggregation: drop tol = 0.02
 aggregation: drop scheme = distance laplacian
 filtered matrix: use lumping = 1
 Build (MueLu::TentativePFactory_kokkos)
-Build (MueLu::UncoupledAggregationFactory_kokkos)
+Build (MueLu::UncoupledAggregationFactory)
 BuildAggregates (Phase - (Dirichlet))
 BuildAggregatesRandom (Phase 1 (main))
 BuildAggregatesRandom (Phase 2a (secondary))
@@ -141,7 +141,7 @@ aggregation: drop tol = 0.02
 aggregation: drop scheme = distance laplacian
 filtered matrix: use lumping = 1
 Build (MueLu::TentativePFactory_kokkos)
-Build (MueLu::UncoupledAggregationFactory_kokkos)
+Build (MueLu::UncoupledAggregationFactory)
 BuildAggregates (Phase - (Dirichlet))
 BuildAggregatesRandom (Phase 1 (main))
 BuildAggregatesRandom (Phase 2a (secondary))
@@ -189,7 +189,7 @@ presmoother ->
 --------------------------------------------------------------------------------
 Number of levels    = 4
 Operator complexity = 1.48
-Smoother complexity = 1.98
+Smoother complexity = <ignored>
 Cycle type          = V
 
 level  rows  nnz    nnz/row  c ratio  procs

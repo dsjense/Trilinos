@@ -24,7 +24,7 @@ TRIBITS_ADD_OPTION_AND_DEFINE(
 # Supported Kokkos version in Trilinos
 # NOTE: When we snapshot Kokkos into Trilinos, we have to update these numbers to maintain
 # compatibility with external Kokkos
-SET(Tpetra_SUPPORTED_KOKKOS_VERSION "4.1.00")
+SET(Tpetra_SUPPORTED_KOKKOS_VERSION "4.2.1")
 
 
 # Option to allow developers to ignore incompatible Kokkos versions
@@ -338,6 +338,24 @@ ELSE () # NOT Tpetra_INST_SYCL
     MESSAGE(STATUS "NOTE: Kokkos::SYCL is ON (the CMake option Kokkos_ENABLE_SYCL is ON), but the corresponding Tpetra Node type is disabled.  If you want to enable instantiation and use of Kokkos::SYCL in Tpetra, please also set the CMake option Tpetra_INST_SYCL:BOOL=ON.  If you use the Kokkos::SYCL version of Tpetra without doing this, you will get link errors!")
   ENDIF ()
 ENDIF () # Tpetra_INST_SYCL
+
+############################################################
+# Shared/Managed Memory Default Allocation
+############################################################
+# Normally we allocate Tpetra objects to the basic space by default,
+# but some apps might want to allocate memory to the "shared" host/device
+# space. This might be CudaUVMSpace, HIPManagedSpace or SYCLSharedUSMSpace.
+# These options allow us to do that sort of thing, changing
+# core/compat/Tpetra_KokkosCompat_ClassicNodeAPI_Wrapper.hpp 
+TRIBITS_ADD_OPTION_AND_DEFINE(
+  Tpetra_ALLOCATE_IN_SHARED_SPACE
+  HAVE_TPETRA_SHARED_ALLOCS
+  "Have Tpetra allocate memory in shared/managed space by default"
+  OFF
+  )
+IF(Tpetra_ALLOCATE_IN_SHARED_SPACE)
+  MESSAGE(STATUS "- Tpetra: Allocating the shared/managed space by default.")
+ENDIF()
 
 
 ############################################################

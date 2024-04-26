@@ -6,8 +6,10 @@
 [Mailing List](https://trilinos.github.io/mail_lists.html) |
 [Packages](http://trilinos.github.io/packages.html)
 
-[![Coverity Scan
-Build](https://scan.coverity.com/projects/1680/badge.svg)](https://scan.coverity.com/projects/1680)
+
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/trilinos/Trilinos/badge)](https://securityscorecards.dev/viewer/?uri=github.com/trilinos/Trilinos)
+
+
 
 The Trilinos Project is an effort to develop algorithms and enabling
 technologies within an object-oriented software framework for the solution of

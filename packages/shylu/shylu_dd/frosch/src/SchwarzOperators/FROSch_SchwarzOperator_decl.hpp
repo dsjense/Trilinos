@@ -204,9 +204,9 @@ namespace FROSch {
                            SC alpha=ScalarTraits<SC>::one(),
                            SC beta=ScalarTraits<SC>::zero()) const = 0;
 
-        virtual ConstXMapPtr getDomainMap() const;
+        virtual const ConstXMapPtr getDomainMap() const;
 
-        virtual ConstXMapPtr getRangeMap() const;
+        virtual const ConstXMapPtr getRangeMap() const;
 
         virtual void describe(FancyOStream &out,
                               const EVerbosityLevel verbLevel=Describable::verbLevel_default) const = 0;
@@ -236,6 +236,7 @@ namespace FROSch {
         bool ExtractLocalSubdomainMatrix_Symbolic_Done_ = false;
         XMatrixPtr subdomainMatrix_;
         XMatrixPtr localSubdomainMatrix_;
+        XImportPtr subdomainScatter_;
 
         bool Verbose_ = false;
 

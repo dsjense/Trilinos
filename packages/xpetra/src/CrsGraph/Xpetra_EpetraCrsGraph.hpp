@@ -60,19 +60,27 @@
 
 #include <Epetra_CrsGraph.h>
 
+#if defined(XPETRA_ENABLE_DEPRECATED_CODE)
+#ifdef __GNUC__
+#warning "The header file Trilinos/packages/xpetra/src/CrsGraph/Xpetra_EpetraCrsGraph.hpp is deprecated."
+#endif
+#else
+#error "The header file Trilinos/packages/xpetra/src/CrsGraph/Xpetra_EpetraCrsGraph.hpp is deprecated."
+#endif
+
 namespace Xpetra {
 
 // TODO: move that elsewhere
 template <class GlobalOrdinal, class Node>
-RCP<const CrsGraph<int, GlobalOrdinal, Node>>
+XPETRA_DEPRECATED RCP<const CrsGraph<int, GlobalOrdinal, Node>>
 toXpetra(const Epetra_CrsGraph &graph);
 
 template <class GlobalOrdinal, class Node>
-const Epetra_CrsGraph &
+XPETRA_DEPRECATED const Epetra_CrsGraph &
 toEpetra(const RCP<const CrsGraph<int, GlobalOrdinal, Node>> &graph);
 
 template <class GlobalOrdinal, class Node>
-class EpetraCrsGraphT
+class XPETRA_DEPRECATED EpetraCrsGraphT
   : public CrsGraph<int, GlobalOrdinal, Node> {
   typedef int LocalOrdinal;
 
@@ -308,6 +316,11 @@ class EpetraCrsGraphT
     TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::NotImplemented,
                                "Xpetra::EpetraCrsGraph only available for GO=int or GO=long long with EpetraNode (Serial or OpenMP depending on configuration)");
     TEUCHOS_UNREACHABLE_RETURN((local_graph_type()));
+  }
+
+  void getLocalDiagOffsets(const Kokkos::View<size_t *, typename Node::device_type, Kokkos::MemoryUnmanaged> &offsets) const {
+    TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::RuntimeError,
+                               "Epetra does not support getLocalDiagOffsets!");
   }
 #else
 #ifdef __GNUC__
@@ -838,6 +851,10 @@ class EpetraCrsGraphT<int, EpetraNode>
     return localGraph;
   }
 
+  void getLocalDiagOffsets(const Kokkos::View<size_t *, typename Node::device_type, Kokkos::MemoryUnmanaged> &offsets) const {
+    TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::RuntimeError,
+                               "Epetra does not support getLocalDiagOffsets!");
+  }
 #else
 #ifdef __GNUC__
 #warning "Xpetra Kokkos interface for CrsGraph is enabled (HAVE_XPETRA_KOKKOS_REFACTOR) but Tpetra is disabled. The Kokkos interface needs Tpetra to be enabled, too."
@@ -1397,6 +1414,11 @@ class EpetraCrsGraphT<long long, EpetraNode>
     local_graph_type localGraph = local_graph_type(kokkosColind, kokkosRowPtr);
 
     return localGraph;
+  }
+
+  void getLocalDiagOffsets(const Kokkos::View<size_t *, typename Node::device_type, Kokkos::MemoryUnmanaged> &offsets) const {
+    TEUCHOS_TEST_FOR_EXCEPTION(true, Xpetra::Exceptions::RuntimeError,
+                               "Epetra does not support getLocalDiagOffsets!");
   }
 #else
 #ifdef __GNUC__

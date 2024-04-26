@@ -300,6 +300,7 @@ namespace Ifpack2 {
 #else
       using impl_scalar_type_1d_view = typename impl_type::impl_scalar_type_1d_view;
 #endif
+      using impl_scalar_type_1d_view_host = Kokkos::View<impl_scalar_type*,Kokkos::HostSpace>;
       using impl_scalar_type_2d_view = typename impl_type::impl_scalar_type_2d_view;
       using impl_scalar_type_2d_view_tpetra = typename impl_type::impl_scalar_type_2d_view_tpetra;
 
@@ -322,6 +323,7 @@ namespace Ifpack2 {
       SendRecvPair<size_type_1d_view_host> offset_host;        // offsets to local id list and data buffer
       SendRecvPair<local_ordinal_type_1d_view> lids; // local id list
       SendRecvPair<impl_scalar_type_1d_view> buffer; // data buffer
+      SendRecvPair<impl_scalar_type_1d_view_host> buffer_host; // data buffer
 
       local_ordinal_type_1d_view dm2cm; // permutation
 
@@ -478,6 +480,11 @@ namespace Ifpack2 {
 
           buffer.send = impl_scalar_type_1d_view(do_not_initialize_tag("buffer send"), send_buffer_size);
           buffer.recv = impl_scalar_type_1d_view(do_not_initialize_tag("buffer recv"), recv_buffer_size);
+
+          if (!Tpetra::Details::Behavior::assumeMpiIsGPUAware()) {
+            buffer_host.send = impl_scalar_type_1d_view_host(do_not_initialize_tag("buffer send"), send_buffer_size);
+            buffer_host.recv = impl_scalar_type_1d_view_host(do_not_initialize_tag("buffer recv"), recv_buffer_size);
+          }
         }
       }
 
@@ -549,12 +556,22 @@ namespace Ifpack2 {
 
         // 0. post receive async
         for (local_ordinal_type i=0,iend=pids.recv.extent(0);i<iend;++i) {
-          irecv(comm,
-                reinterpret_cast<char*>(buffer.recv.data() + offset_host.recv[i]*mv_blocksize),
-                (offset_host.recv[i+1] - offset_host.recv[i])*mv_blocksize*sizeof(impl_scalar_type),
-                pids.recv[i],
-                42,
-                &reqs.recv[i]);
+          if(Tpetra::Details::Behavior::assumeMpiIsGPUAware()) {
+            irecv(comm,
+                  reinterpret_cast<char*>(buffer.recv.data() + offset_host.recv[i]*mv_blocksize),
+                  (offset_host.recv[i+1] - offset_host.recv[i])*mv_blocksize*sizeof(impl_scalar_type),
+                  pids.recv[i],
+                  42,
+                  &reqs.recv[i]);
+          }
+          else {
+            irecv(comm,
+                  reinterpret_cast<char*>(buffer_host.recv.data() + offset_host.recv[i]*mv_blocksize),
+                  (offset_host.recv[i+1] - offset_host.recv[i])*mv_blocksize*sizeof(impl_scalar_type),
+                  pids.recv[i],
+                  42,
+                  &reqs.recv[i]);
+          }
         }
 
         /// this is necessary to pass unit test. somewhere overlapped using the default execution space
@@ -569,19 +586,43 @@ namespace Ifpack2 {
                          mv, blocksize,
                          //execution_space());
                          exec_instances[i%8]);
+          if (!Tpetra::Details::Behavior::assumeMpiIsGPUAware()) {
+            //if (i<8)  exec_instances[i%8].fence();
+            const local_ordinal_type num_vectors = mv.extent(1);
+            const local_ordinal_type mv_blocksize = blocksize*num_vectors;
 
+            Kokkos::deep_copy(exec_instances[i%8],
+              Kokkos::subview(buffer_host.send, 
+                Kokkos::pair<local_ordinal_type, local_ordinal_type>(
+                  offset_host.send(i)*mv_blocksize, 
+                  offset_host.send(i+1)*mv_blocksize)), 
+              Kokkos::subview(buffer.send, 
+                Kokkos::pair<local_ordinal_type, local_ordinal_type>(
+                  offset_host.send(i)*mv_blocksize,
+                  offset_host.send(i+1)*mv_blocksize)));
+          }
         }
         /// somehow one unit test fails when we use exec_instance[i%8]
         //execution_space().fence();
         for (local_ordinal_type i=0;i<static_cast<local_ordinal_type>(pids.send.extent(0));++i) {
           // 1.1. sync the stream and isend
           if (i<8)  exec_instances[i%8].fence();
-          isend(comm,
-                reinterpret_cast<const char*>(buffer.send.data() + offset_host.send[i]*mv_blocksize),
-                (offset_host.send[i+1] - offset_host.send[i])*mv_blocksize*sizeof(impl_scalar_type),
-                pids.send[i],
-                42,
-                &reqs.send[i]);
+          if(Tpetra::Details::Behavior::assumeMpiIsGPUAware()) {
+            isend(comm,
+                  reinterpret_cast<const char*>(buffer.send.data() + offset_host.send[i]*mv_blocksize),
+                  (offset_host.send[i+1] - offset_host.send[i])*mv_blocksize*sizeof(impl_scalar_type),
+                  pids.send[i],
+                  42,
+                  &reqs.send[i]);
+          }
+          else {
+            isend(comm,
+                  reinterpret_cast<const char*>(buffer_host.send.data() + offset_host.send[i]*mv_blocksize),
+                  (offset_host.send[i+1] - offset_host.send[i])*mv_blocksize*sizeof(impl_scalar_type),
+                  pids.send[i],
+                  42,
+                  &reqs.send[i]);
+          }
         }
 
         // 2. poke communication
@@ -603,6 +644,21 @@ namespace Ifpack2 {
 
           // 0.0. wait any
           waitany(pids.recv.extent(0), reqs.recv.data(), &idx);
+
+          if (!Tpetra::Details::Behavior::assumeMpiIsGPUAware()) {
+            const local_ordinal_type num_vectors = remote_multivector.extent(1);
+            const local_ordinal_type mv_blocksize = blocksize*num_vectors;
+
+            Kokkos::deep_copy(
+              Kokkos::subview(buffer.recv, 
+                Kokkos::pair<local_ordinal_type, local_ordinal_type>(
+                  offset_host.recv(idx)*mv_blocksize, 
+                  offset_host.recv(idx+1)*mv_blocksize)), 
+              Kokkos::subview(buffer_host.recv, 
+                Kokkos::pair<local_ordinal_type, local_ordinal_type>(
+                  offset_host.recv(idx)*mv_blocksize, 
+                  offset_host.recv(idx+1)*mv_blocksize)));
+          }
 
           // 0.1. unpack data after data is moved into a device
           copy<ToMultiVector>(lids.recv, buffer.recv,
@@ -696,12 +752,22 @@ namespace Ifpack2 {
 
         // receive async
         for (local_ordinal_type i=0,iend=pids.recv.extent(0);i<iend;++i) {
-          irecv(comm,
-                reinterpret_cast<char*>(buffer.recv.data() + offset_host.recv[i]*mv_blocksize),
-                (offset_host.recv[i+1] - offset_host.recv[i])*mv_blocksize*sizeof(impl_scalar_type),
-                pids.recv[i],
-                42,
-                &reqs.recv[i]);
+          if(Tpetra::Details::Behavior::assumeMpiIsGPUAware()) {
+            irecv(comm,
+                  reinterpret_cast<char*>(buffer.recv.data() + offset_host.recv[i]*mv_blocksize),
+                  (offset_host.recv[i+1] - offset_host.recv[i])*mv_blocksize*sizeof(impl_scalar_type),
+                  pids.recv[i],
+                  42,
+                  &reqs.recv[i]);
+          }
+          else {
+            irecv(comm,
+                  reinterpret_cast<char*>(buffer_host.recv.data() + offset_host.recv[i]*mv_blocksize),
+                  (offset_host.recv[i+1] - offset_host.recv[i])*mv_blocksize*sizeof(impl_scalar_type),
+                  pids.recv[i],
+                  42,
+                  &reqs.recv[i]);
+          }
         }
 
         // send async
@@ -709,12 +775,31 @@ namespace Ifpack2 {
           copy<ToBuffer>(lids.send, buffer.send, offset_host.send(i), offset_host.send(i+1),
                          mv, blocksize);
           Kokkos::fence();
-          isend(comm,
-                reinterpret_cast<const char*>(buffer.send.data() + offset_host.send[i]*mv_blocksize),
-                (offset_host.send[i+1] - offset_host.send[i])*mv_blocksize*sizeof(impl_scalar_type),
-                pids.send[i],
-                42,
-                &reqs.send[i]);
+          if(Tpetra::Details::Behavior::assumeMpiIsGPUAware()) {
+            isend(comm,
+                  reinterpret_cast<const char*>(buffer.send.data() + offset_host.send[i]*mv_blocksize),
+                  (offset_host.send[i+1] - offset_host.send[i])*mv_blocksize*sizeof(impl_scalar_type),
+                  pids.send[i],
+                  42,
+                  &reqs.send[i]);
+          }
+          else {
+            Kokkos::deep_copy(
+              Kokkos::subview(buffer_host.send, 
+                Kokkos::pair<local_ordinal_type, local_ordinal_type>(
+                  offset_host.send(i)*mv_blocksize,
+                  offset_host.send(i+1)*mv_blocksize)), 
+              Kokkos::subview(buffer.send, 
+                Kokkos::pair<local_ordinal_type, local_ordinal_type>(
+                  offset_host.send(i)*mv_blocksize,
+                  offset_host.send(i+1)*mv_blocksize)));
+            isend(comm,
+                  reinterpret_cast<const char*>(buffer_host.send.data() + offset_host.send[i]*mv_blocksize),
+                  (offset_host.send[i+1] - offset_host.send[i])*mv_blocksize*sizeof(impl_scalar_type),
+                  pids.send[i],
+                  42,
+                  &reqs.send[i]);            
+          }
         }
 
         // I find that issuing an Iprobe seems to nudge some MPIs into action,
@@ -735,6 +820,19 @@ namespace Ifpack2 {
         for (local_ordinal_type i=0,iend=pids.recv.extent(0);i<iend;++i) {
           local_ordinal_type idx = i;
           waitany(pids.recv.extent(0), reqs.recv.data(), &idx);
+          if (!Tpetra::Details::Behavior::assumeMpiIsGPUAware()) {
+            const local_ordinal_type num_vectors = remote_multivector.extent(1);
+            const local_ordinal_type mv_blocksize = blocksize*num_vectors;
+            Kokkos::deep_copy(
+              Kokkos::subview(buffer.recv, 
+                Kokkos::pair<local_ordinal_type, local_ordinal_type>(
+                  offset_host.recv(idx)*mv_blocksize,
+                  offset_host.recv(idx+1)*mv_blocksize)), 
+              Kokkos::subview(buffer_host.recv, 
+                Kokkos::pair<local_ordinal_type, local_ordinal_type>(
+                  offset_host.recv(idx)*mv_blocksize,
+                  offset_host.recv(idx+1)*mv_blocksize)));
+          }
           copy<ToMultiVector>(lids.recv, buffer.recv, offset_host.recv(idx), offset_host.recv(idx+1),
                               remote_multivector, blocksize);
         }
@@ -842,6 +940,65 @@ namespace Ifpack2 {
       return Teuchos::null;
     }
 
+    template<typename local_ordinal_type>
+    local_ordinal_type costTRSM(const local_ordinal_type block_size) {
+      return block_size*block_size;
+    }
+
+    template<typename local_ordinal_type>
+    local_ordinal_type costGEMV(const local_ordinal_type block_size) {
+      return 2*block_size*block_size;
+    }
+
+    template<typename local_ordinal_type>
+    local_ordinal_type costTriDiagSolve(const local_ordinal_type subline_length, const local_ordinal_type block_size) {
+      return 2 * subline_length * costTRSM(block_size) + 2 * (subline_length-1) * costGEMV(block_size);
+    }
+
+    template<typename local_ordinal_type>
+    local_ordinal_type costSolveSchur(const local_ordinal_type num_parts,
+                                      const local_ordinal_type num_teams,
+                                      const local_ordinal_type line_length,
+                                      const local_ordinal_type block_size,
+                                      const local_ordinal_type n_subparts_per_part) {
+      const local_ordinal_type subline_length = ceil(double(line_length - (n_subparts_per_part-1) * 2) / n_subparts_per_part);
+      if (subline_length < 1) {
+        return INT_MAX;
+      }
+
+      const local_ordinal_type p_n_lines = ceil(double(num_parts)/num_teams);
+      const local_ordinal_type p_n_sublines = ceil(double(n_subparts_per_part)*num_parts/num_teams);
+      const local_ordinal_type p_n_sublines_2 = ceil(double(n_subparts_per_part-1)*num_parts/num_teams);
+
+      const local_ordinal_type p_costApplyE = p_n_sublines_2 * subline_length * 2 * costGEMV(block_size);
+      const local_ordinal_type p_costApplyS = p_n_lines * costTriDiagSolve((n_subparts_per_part-1)*2,block_size);
+      const local_ordinal_type p_costApplyAinv = p_n_sublines * costTriDiagSolve(subline_length,block_size);
+      const local_ordinal_type p_costApplyC = p_n_sublines_2 * 2 * costGEMV(block_size);
+
+      if (n_subparts_per_part == 1) {
+        return p_costApplyAinv;
+      }
+      return p_costApplyE + p_costApplyS + p_costApplyAinv + p_costApplyC;
+    }
+
+    template<typename local_ordinal_type>
+    local_ordinal_type getAutomaticNSubparts(const local_ordinal_type num_parts,
+                                             const local_ordinal_type num_teams,
+                                             const local_ordinal_type line_length,
+                                             const local_ordinal_type block_size) {
+      local_ordinal_type n_subparts_per_part_0 = 1;
+      local_ordinal_type flop_0 = costSolveSchur(num_parts, num_teams, line_length, block_size, n_subparts_per_part_0);
+      local_ordinal_type flop_1 = costSolveSchur(num_parts, num_teams, line_length, block_size, n_subparts_per_part_0+1);
+      while (flop_0 > flop_1) {
+        flop_0 = flop_1;
+        flop_1 = costSolveSchur(num_parts, num_teams, line_length, block_size, (++n_subparts_per_part_0)+1);
+      }
+      return n_subparts_per_part_0;
+    }
+
+    template<typename ArgActiveExecutionMemorySpace>
+    struct SolveTridiagsDefaultModeAndAlgo;
+
     ///
     /// setup part interface using the container partitions array
     ///
@@ -849,7 +1006,7 @@ namespace Ifpack2 {
     BlockHelperDetails::PartInterface<MatrixType>
     createPartInterface(const Teuchos::RCP<const typename BlockHelperDetails::ImplType<MatrixType>::tpetra_block_crs_matrix_type> &A,
                         const Teuchos::Array<Teuchos::Array<typename BlockHelperDetails::ImplType<MatrixType>::local_ordinal_type> > &partitions,
-                        const typename BlockHelperDetails::ImplType<MatrixType>::local_ordinal_type n_subparts_per_part) {
+                        const typename BlockHelperDetails::ImplType<MatrixType>::local_ordinal_type n_subparts_per_part_in) {
       IFPACK2_BLOCKHELPER_TIMER("createPartInterface");
       using impl_type = BlockHelperDetails::ImplType<MatrixType>;
       using local_ordinal_type = typename impl_type::local_ordinal_type;
@@ -857,7 +1014,9 @@ namespace Ifpack2 {
       using local_ordinal_type_2d_view = typename impl_type::local_ordinal_type_2d_view;
       using size_type = typename impl_type::size_type;
 
+      const auto blocksize = A->getBlockSize();
       constexpr int vector_length = impl_type::vector_length;
+      constexpr int internal_vector_length = impl_type::internal_vector_length;
 
       const auto comm = A->getRowMap()->getComm();
 
@@ -866,6 +1025,40 @@ namespace Ifpack2 {
       const bool jacobi = partitions.size() == 0;
       const local_ordinal_type A_n_lclrows = A->getLocalNumRows();
       const local_ordinal_type nparts = jacobi ? A_n_lclrows : partitions.size();
+
+      typedef std::pair<local_ordinal_type,local_ordinal_type> size_idx_pair_type;
+      std::vector<size_idx_pair_type> partsz(nparts);
+
+      if (!jacobi) {
+        for (local_ordinal_type i=0;i<nparts;++i)
+          partsz[i] = size_idx_pair_type(partitions[i].size(), i);
+        std::sort(partsz.begin(), partsz.end(),
+                  [] (const size_idx_pair_type& x, const size_idx_pair_type& y) {
+                    return x.first > y.first;
+                  });
+      }
+
+      local_ordinal_type n_subparts_per_part;
+      if (n_subparts_per_part_in == -1) {
+        // If the number of subparts is set to -1, the user let the algorithm
+        // decides the value automatically
+        using execution_space = typename impl_type::execution_space;
+
+        const int line_length = partsz[0].first;
+
+        const local_ordinal_type team_size = 
+          SolveTridiagsDefaultModeAndAlgo<typename execution_space::memory_space>::
+          recommended_team_size(blocksize, vector_length, internal_vector_length);
+
+        const local_ordinal_type num_teams = execution_space().concurrency() / (team_size * vector_length);
+
+        n_subparts_per_part = getAutomaticNSubparts(nparts, num_teams, line_length, blocksize);
+
+        printf("Automatically chosen n_subparts_per_part = %d for nparts = %d, num_teams = %d, team_size = %d, line_length = %d, and blocksize = %d;\n", n_subparts_per_part, nparts, num_teams, team_size, line_length, blocksize);
+      }
+      else {
+        n_subparts_per_part = n_subparts_per_part_in;
+      }
 
       // Total number of sub lines:
       const local_ordinal_type n_sub_parts = nparts * n_subparts_per_part;
@@ -896,14 +1089,6 @@ namespace Ifpack2 {
         // reorder parts to maximize simd packing efficiency
         p.resize(nparts);
 
-        typedef std::pair<local_ordinal_type,local_ordinal_type> size_idx_pair_type;
-        std::vector<size_idx_pair_type> partsz(nparts);
-        for (local_ordinal_type i=0;i<nparts;++i)
-          partsz[i] = size_idx_pair_type(partitions[i].size(), i);
-        std::sort(partsz.begin(), partsz.end(),
-                  [] (const size_idx_pair_type& x, const size_idx_pair_type& y) {
-                    return x.first > y.first;
-                  });
         for (local_ordinal_type i=0;i<nparts;++i)
           p[i] = partsz[i].second;
 
@@ -2073,9 +2258,6 @@ namespace Ifpack2 {
       }
     };
 #endif
-
-    template<typename ArgActiveExecutionMemorySpace>
-    struct SolveTridiagsDefaultModeAndAlgo;
 
     template<typename impl_type, typename WWViewType>
     KOKKOS_INLINE_FUNCTION
@@ -3251,7 +3433,7 @@ namespace Ifpack2 {
 
           {
 #ifdef IFPACK2_BLOCKTRIDICONTAINER_USE_PRINTF
-        printf("Star ComputeSchurTag\n");
+        printf("Start ComputeSchurTag\n");
 #endif
             IFPACK2_BLOCKHELPER_TIMER("BlockTriDi::NumericPhase::ComputeSchurTag");
             writeBTDValuesToFile(part2packrowidx0_sub.extent(0), scalar_values_schur, "before_schur.mm");
@@ -3270,7 +3452,7 @@ namespace Ifpack2 {
 
           {
 #ifdef IFPACK2_BLOCKTRIDICONTAINER_USE_PRINTF
-        printf("Star FactorizeSchurTag\n");
+        printf("Start FactorizeSchurTag\n");
 #endif
             IFPACK2_BLOCKHELPER_TIMER("BlockTriDi::NumericPhase::FactorizeSchurTag");
             Kokkos::TeamPolicy<execution_space,FactorizeSchurTag>

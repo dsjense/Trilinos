@@ -59,10 +59,18 @@
 
 #include "Xpetra_Utils.hpp"
 
+#if defined(XPETRA_ENABLE_DEPRECATED_CODE)
+#ifdef __GNUC__
+#warning "The header file Trilinos/packages/xpetra/src/Operator/Xpetra_EpetraOperator.hpp is deprecated."
+#endif
+#else
+#error "The header file Trilinos/packages/xpetra/src/Operator/Xpetra_EpetraOperator.hpp is deprecated."
+#endif
+
 namespace Xpetra {
 
 template <class EpetraGlobalOrdinal, class Node>
-class EpetraOperator : public Operator<double, int, EpetraGlobalOrdinal, Node> {
+class XPETRA_DEPRECATED EpetraOperator : public Operator<double, int, EpetraGlobalOrdinal, Node> {
   typedef double Scalar;
   typedef int LocalOrdinal;
   typedef EpetraGlobalOrdinal GlobalOrdinal;
@@ -71,13 +79,13 @@ class EpetraOperator : public Operator<double, int, EpetraGlobalOrdinal, Node> {
   //@{
 
   //! The Map associated with the domain of this operator, which must be compatible with X.getMap().
-  virtual Teuchos::RCP<const Xpetra::Map<LocalOrdinal, GlobalOrdinal, Node> > getDomainMap() const {
+  virtual const Teuchos::RCP<const Xpetra::Map<LocalOrdinal, GlobalOrdinal, Node> > getDomainMap() const {
     XPETRA_MONITOR("EpetraOperator::getDomainMap()");
     return toXpetra<GlobalOrdinal, Node>(op_->OperatorDomainMap());
   }
 
   //! The Map associated with the range of this operator, which must be compatible with Y.getMap().
-  virtual Teuchos::RCP<const Xpetra::Map<LocalOrdinal, GlobalOrdinal, Node> > getRangeMap() const {
+  virtual const Teuchos::RCP<const Xpetra::Map<LocalOrdinal, GlobalOrdinal, Node> > getRangeMap() const {
     XPETRA_MONITOR("EpetraOperator::getRangeMap()");
     return toXpetra<GlobalOrdinal, Node>(op_->OperatorRangeMap());
   }

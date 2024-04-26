@@ -118,7 +118,9 @@ namespace FROSch {
     {
         FROSCH_TIMER_START_LEVELID(applyTime,"SumOperator::apply");
         if (OperatorVector_.size()>0) {
-            if (XTmp_.is_null()) XTmp_ = MultiVectorFactory<SC,LO,GO,NO>::Build(x.getMap(),x.getNumVectors());
+            if (XTmp_.is_null() || XTmp_->getNumVectors() != x.getNumVectors()) {
+                XTmp_ = MultiVectorFactory<SC,LO,GO,NO>::Build(x.getMap(),x.getNumVectors());
+            }
             *XTmp_ = x; // Das brauche ich für den Fall das x=y
             UN itmp = 0;
             for (UN i=0; i<OperatorVector_.size(); i++) {
@@ -134,13 +136,13 @@ namespace FROSch {
     }
 
     template <class SC,class LO,class GO,class NO>
-    typename SumOperator<SC,LO,GO,NO>::ConstXMapPtr SumOperator<SC,LO,GO,NO>::getDomainMap() const
+    const typename SumOperator<SC,LO,GO,NO>::ConstXMapPtr SumOperator<SC,LO,GO,NO>::getDomainMap() const
     {
         return OperatorVector_[0]->getDomainMap();
     }
 
     template <class SC,class LO,class GO,class NO>
-    typename SumOperator<SC,LO,GO,NO>::ConstXMapPtr SumOperator<SC,LO,GO,NO>::getRangeMap() const
+    const typename SumOperator<SC,LO,GO,NO>::ConstXMapPtr SumOperator<SC,LO,GO,NO>::getRangeMap() const
     {
         return OperatorVector_[0]->getRangeMap();
     }

@@ -259,9 +259,16 @@ public:
   /// \brief Use Kokkos::Profiling in Tpetra::ProfilingRegion
   ///
   /// This is enabled by default if KOKKOS_ENABLE_PROFILING is defined.
-  /// You mau control this at run time via the <tt>TPETRA_USE_KOKKOS_PROFILING</tt>
+  /// You may control this at run time via the <tt>TPETRA_USE_KOKKOS_PROFILING</tt>
   /// environment variable.
   static bool profilingRegionUseKokkosProfiling();
+
+  /// \brief Fusing SpMV and update in residual instead of using 2 kernel launches.
+  /// Fusing kernels implies that no TPLs (CUSPARSE, ROCSPARSE, ...) will be used for the residual.
+  ///
+  /// This is enabled by default.  You may control this at run time via the
+  /// <tt>TPETRA_FUSED_RESIDUAL</tt> environment variable.
+  static bool fusedResidual();
 
   /// \brief Skip copyAndPermute if possible
   ///
@@ -317,7 +324,12 @@ public:
   /// This is disabled by default.  You may control this at run time via the
   /// <tt>TPETRA_SPACE_ID_WARN_LIMIT</tt> environment variable.
   static size_t spacesIdWarnLimit();
+
+  /// \brief Search the environment for TPETRA_ variables and reject unrecognized ones
+  static void reject_unrecognized_env_vars();
 };
+
+
 
 } // namespace Details
 } // namespace Tpetra
